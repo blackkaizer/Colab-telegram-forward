@@ -13,20 +13,24 @@ import re
 
 def is_chat_id(chat):
     chat = str(chat)
-    if chat.startswith('-100') and chat[4:].isdigit():
+    if chat.startswith('-100'):
+        try:
+            int(chat[4:])  # Tenta converter a parte numérica
+            return True
+        except ValueError:
+            return False
+    try:
+        int(chat)  # Tenta converter o chat inteiro
         return True
-    if chat.isdigit():
-        return True
-    if chat.startswith('@'):  # Adicionei a verificação se é um username
-        return True
-    return False
+    except ValueError:
+        return chat.startswith('@')
 
 
 def get_chats(client, bot_id):
     try:
         if is_chat_id(from_chat):
-            chats["from_chat_id"] = int(from_chat) if from_chat.isdigit() else int(from_chat)  #garante que o id será int
-            from_chat_obj = client.get_chat(chats["from_chat_id"])
+            chats["from_chat_id"] = int(from_chat)  # Mantém como inteiro para uso interno
+            from_chat_obj = client.get_chat(str(chats["from_chat_id"]))  # Passa como string!
         else:
             from_chat_obj = client.get_chat(from_chat)  # Assume username
             chats["from_chat_id"] = from_chat_obj.id
@@ -34,7 +38,8 @@ def get_chats(client, bot_id):
         from_chat_title = from_chat_obj.title if from_chat_obj.title else f"{from_chat_obj.first_name} {from_chat_obj.last_name}"
 
         if is_chat_id(to_chat):
-            chats["to_chat_id"] = int(to_chat) if to_chat.isdigit() else int(to_chat)  #garante que o id será int
+            chats["to_chat_id"] = int(to_chat)  # Mantém como inteiro
+            to_chat_obj = client.get_chat(str(chats["to_chat_id"]))  # Passa como string!
         else:
             to_chat_obj = client.get_chat(to_chat)
             chats["to_chat_id"] = to_chat_obj.id
@@ -48,11 +53,11 @@ def get_chats(client, bot_id):
                         privileges=ChatPrivileges(can_post_messages=True),
                     )
                 except Exception as e:
-                    print(f"Erro ao promover o bot em {chat_id}: {e}")  # Tratamento de erro
+                    print(f"Erro ao promover o bot em {chat_id}: {e}")
 
     except Exception as e:
         print(f"Erro ao obter chats: {e}")
-        exit()  # Encerra o programa caso haja erro ao obter os chats
+        exit()
 
 
 def connect_to_api(api_id, api_hash, bot_token):
