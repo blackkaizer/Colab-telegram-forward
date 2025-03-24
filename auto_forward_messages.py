@@ -12,8 +12,8 @@ import re
 import logging
 from pathlib import Path
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname=s - %(message)s')
+# Configure logging - Fix the format string by correcting levelname syntax
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def is_chat_id(chat):
@@ -235,6 +235,8 @@ def connect_to_api(api_id, api_hash, bot_token):
     try:
         logger.info("Connecting to Telegram API as user...")
         client = Client('user', api_id=api_id, api_hash=api_hash)
+        bot_id = 'bot_id:none'
+        
         with client:
             user_id = client.get_me().id
             logger.info(f"Connected as user: {user_id}")
@@ -244,22 +246,28 @@ def connect_to_api(api_id, api_hash, bot_token):
         
         if bot_token:
             logger.info("Connecting to Telegram API as bot...")
-            client = Client(
+            bot_client = Client(
                 'bot', api_id=api_id, api_hash=api_hash, bot_token=bot_token
             )
-            bot_id = bot_token[:bot_token.find(':')]
-            bot_id = f'bot_id:{bot_id}'
-            with client:
-                client.send_message(
+            
+            with bot_client:
+                bot_id_num = bot_token.split(':')[0]
+                bot_id = f'bot_id:{bot_id_num}'
+                bot_client.send_message(
                     user_id, "Message sent with **Auto Forward Messages**!"
                 )
                 logger.info(f"Connected as bot: {bot_id}")
-        else:
-            bot_id = 'bot_id:none'
         
+        # Create default configuration
         data = f"[default]\n{bot_id}\nuser_delay_seconds:10\nbot_delay_seconds:5\nskip_delay_seconds:1"
         with open('config.ini', 'w') as f:
             f.write(data)
+        
+        # Initialize configs dictionary with default values
+        configs["bot_id"] = bot_id
+        configs["user_delay_seconds"] = 10.0
+        configs["bot_delay_seconds"] = 5.0
+        configs["skip_delay_seconds"] = 1.0
         
         return client, bot_id
     except Exception as e:
@@ -435,9 +443,17 @@ def get_full_chat():
         raise
 
 def main():
-    global delay
+    global delay, configs
     
     try:
+        # Set default values for configs
+        configs = {
+            "user_delay_seconds": 10.0,
+            "bot_delay_seconds": 5.0,
+            "skip_delay_seconds": 1.0,
+            "bot_id": "bot_id:none"
+        }
+        
         # If API credentials are provided, set up the connection
         if options.api_id:
             _, bot_id = connect_to_api(options.api_id, options.api_hash, options.bot_token)
@@ -447,20 +463,16 @@ def main():
             if os.path.exists("config.ini"):
                 config_data = ConfigParser()
                 config_data.read("config.ini")
-                config_data = dict(config_data["default"])
-                configs["user_delay_seconds"] = float(config_data["user_delay_seconds"])
-                configs["bot_delay_seconds"] = float(config_data["bot_delay_seconds"])
-                configs["skip_delay_seconds"] = float(config_data.get("skip_delay_seconds", "1"))
-                configs["bot_id"] = config_data["bot_id"]
-            else:
-                # Set default values if no config file
-                configs["user_delay_seconds"] = 10.0
-                configs["bot_delay_seconds"] = 5.0
-                configs["skip_delay_seconds"] = 1.0
-                configs["bot_id"] = "bot_id:none"
+                if "default" in config_data:
+                    config_data = dict(config_data["default"])
+                    configs["user_delay_seconds"] = float(config_data.get("user_delay_seconds", "10.0"))
+                    configs["bot_delay_seconds"] = float(config_data.get("bot_delay_seconds", "5.0"))
+                    configs["skip_delay_seconds"] = float(config_data.get("skip_delay_seconds", "1.0"))
+                    configs["bot_id"] = config_data.get("bot_id", "bot_id:none")
 
         # Set delay based on mode
         delay = configs["user_delay_seconds"] if mode == "user" else configs["bot_delay_seconds"]
+        logger.info(f"Using delay of {delay} seconds between messages")
 
         # Handle restart option or single run
         if options.restart:
@@ -478,6 +490,7 @@ def main():
         logger.error(f"Error in main function: {e}", exc_info=True)
         raise
 
+# Parse command line arguments
 os.system('clear || cls')
 parser = ArgumentParser()
 parser.add_argument(
@@ -499,8 +512,11 @@ parser.add_argument('-s','--api-hash',type=str,help="Api hash")
 parser.add_argument('-b','--bot-token',type=str,help="Token of a bot")
 options = parser.parse_args()
 
+# Initialize global variables
 configs = {}
 chats = {}
+CACHE_FILE = None
+delay = 10.0  # Default delay if not set
 
 from_chat = options.orig
 to_chat = options.dest
