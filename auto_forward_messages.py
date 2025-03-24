@@ -18,10 +18,27 @@ logger = logging.getLogger(__name__)
 def is_chat_id(chat):
     if chat is None:
         return False
-    # Support more formats: -100 channels, regular IDs, and username-like strings
-    return bool(re.match(r'^(-100)\d+$', str(chat)) or  # Channel/supergroup
+    # Support more formats: -100 channels (with any number of digits), regular IDs, and username-like strings
+    return bool(re.match(r'^(-100)\d+$', str(chat)) or  # Channel/supergroup - updated to handle longer IDs
                 re.match(r'^\d+$', str(chat)) or  # User/bot/private channel
                 re.match(r'^-\d+$', str(chat)))  # Group
+
+def convert_channel_id(chat_id):
+    """Convert channel IDs to the format Pyrogram can understand
+    
+    Newer channel IDs might have an extra digit that needs to be handled differently
+    """
+    if isinstance(chat_id, str) and chat_id.startswith('-100'):
+        # Convert string format to integer by removing first 4 chars (-100)
+        # and converting the rest to int (this is what Pyrogram expects)
+        try:
+            raw_id = int(chat_id[4:])
+            logger.info(f"Converting channel ID from {chat_id} to raw format: {raw_id}")
+            return raw_id
+        except ValueError:
+            logger.error(f"Failed to convert channel ID: {chat_id}")
+            return chat_id
+    return chat_id
 
 def extract_chat_id_from_link(link):
     """Extract channel username or ID from various telegram links"""
@@ -49,7 +66,13 @@ def get_chats(client, bot_id):
         # Try to get chat info
         try:
             if is_chat_id(from_chat_id):
-                chat = client.get_chat(int(from_chat_id))
+                # If it's a new format channel ID (-100...), convert it properly
+                if str(from_chat_id).startswith('-100'):
+                    chat_id_to_use = convert_channel_id(from_chat_id)
+                    logger.info(f"Using converted channel ID: {chat_id_to_use}")
+                    chat = client.get_chat(chat_id_to_use)
+                else:
+                    chat = client.get_chat(int(from_chat_id))
                 logger.info(f"Found chat by ID: {chat.id}")
             else:
                 # Handle username (remove @ if present)
@@ -58,6 +81,9 @@ def get_chats(client, bot_id):
                 logger.info(f"Found chat by username: {chat.id}")
         except (ValueError, PeerIdInvalid, UsernameNotOccupied) as e:
             logger.error(f"Error getting origin chat: {e}")
+            logger.error(f"Additional info - Chat ID format used: {from_chat_id}")
+            if str(from_chat_id).startswith('-100'):
+                logger.error(f"This appears to be a channel ID. Tried with format: {convert_channel_id(from_chat_id)}")
             raise ValueError(f"Could not find origin chat: {from_chat}. Error: {e}")
             
         # Get chat title or name
@@ -76,7 +102,13 @@ def get_chats(client, bot_id):
             
             try:
                 if is_chat_id(to_chat_id):
-                    to_chat_info = client.get_chat(int(to_chat_id))
+                    # If it's a new format channel ID (-100...), convert it properly
+                    if str(to_chat_id).startswith('-100'):
+                        chat_id_to_use = convert_channel_id(to_chat_id)
+                        logger.info(f"Using converted channel ID: {chat_id_to_use}")
+                        to_chat_info = client.get_chat(chat_id_to_use)
+                    else:
+                        to_chat_info = client.get_chat(int(to_chat_id))
                     chats["to_chat_id"] = to_chat_info.id
                 else:
                     username = to_chat_id.lstrip('@') if to_chat_id else to_chat
@@ -85,6 +117,9 @@ def get_chats(client, bot_id):
                 logger.info(f"Destination chat resolved: ID={chats['to_chat_id']}")
             except (ValueError, PeerIdInvalid, UsernameNotOccupied) as e:
                 logger.error(f"Error getting destination chat: {e}")
+                logger.error(f"Additional info - Chat ID format used: {to_chat_id}")
+                if str(to_chat_id).startswith('-100'):
+                    logger.error(f"This appears to be a channel ID. Tried with format: {convert_channel_id(to_chat_id)}")
                 raise ValueError(f"Could not find destination chat: {to_chat}. Error: {e}")
         else:
             # Create destination channel if none provided
